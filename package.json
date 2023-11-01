@@ -1,7 +1,7 @@
 {
-  "name": "schemagenius",
-  "displayName": "schemagenius",
-  "description": "SchemaCraft: Seamlessly convert your DBML designs from dbdiagram into ORM code within VS Code.",
+  "name": "SchemaGenius",
+  "displayName": "SchemaGenius",
+  "description": "SchemaGenius: Seamlessly convert your DBML designs from dbdiagram into ORM code within VS Code.",
   "publisher": "Rockship-loctvl842",
   "repository": "https://github.com/loctvl842/SchemaGenius",
   "version": "0.0.1",
@@ -11,7 +11,9 @@
   "categories": [
     "Other"
   ],
-  "activationEvents": [],
+  "activationEvents": [
+    "onCommand:schemagenius.generateSchema"
+  ],
   "main": "./out/extension.js",
   "contributes": {
     "commands": [
@@ -37,6 +39,7 @@
     "@typescript-eslint/eslint-plugin": "^6.9.0",
     "@typescript-eslint/parser": "^6.9.0",
     "@vscode/test-electron": "^2.3.6",
+    "chalk": "4.1.2",
     "eslint": "^8.52.0",
     "eslint-config-airbnb": "19.0.4",
     "eslint-config-airbnb-base": "15.0.0",
