@@ -3,6 +3,7 @@
   "displayName": "schemagenius",
   "description": "SchemaCraft: Seamlessly convert your DBML designs from dbdiagram into ORM code within VS Code.",
   "publisher": "Rockship-loctvl842",
+  "repository": "https://github.com/loctvl842/SchemaGenius",
   "version": "0.0.1",
   "engines": {
     "vscode": "^1.83.0"
