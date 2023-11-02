@@ -1,0 +1,40 @@
+{
+  "data": [
+    {
+      "type": "postgres",
+      "package": "pg",
+      "name": "PostgreSQL",
+      "source": "https://www.npmjs.com/package/pg"
+    },
+    {
+      "type": "cockroachdb",
+      "package": "pg",
+      "name": "CockroachDB",
+      "source": "https://www.npmjs.com/package/pg"
+    },
+    {
+      "type": "mysql",
+      "package": "mysql",
+      "name": "MySQL",
+      "source": "https://www.npmjs.com/package/mysql"
+    },
+    {
+      "type": "mysql",
+      "package": "mysql",
+      "name": "MariaDB",
+      "source": "https://www.npmjs.com/package/mysql"
+    },
+    {
+      "type": "mssql",
+      "package": "mssql",
+      "name": "Microsoft SQL Server",
+      "source": "https://www.npmjs.com/package/mssql"
+    },
+    {
+      "type": "sqlite",
+      "package": "sqlite3",
+      "name": "SQLite",
+      "source": "https://www.npmjs.com/package/sqlite3"
+    }
+  ]
+}

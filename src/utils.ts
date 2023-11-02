@@ -127,7 +127,16 @@ export async function isInstalled(packageName: string, targetDir: string): Promi
     const rootOfTargetDir = await getRootOfDir(targetDir);
     const packagePath = path.resolve(rootOfTargetDir, 'node_modules', packageName);
     await fs.promises.access(packagePath, fs.constants.F_OK);
-    return true;
+
+    const packageJsonPath = `${rootOfTargetDir}/package.json`;
+    const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
+
+    const deps = packageJson.dependencies || {};
+    const devDeps = packageJson.devDependencies || {};
+    return (
+      Object.prototype.hasOwnProperty.call(deps, packageName)
+      || Object.prototype.hasOwnProperty.call(devDeps, packageName)
+    );
   } catch (e) {
     return false;
   }

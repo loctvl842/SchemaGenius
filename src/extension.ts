@@ -1,7 +1,8 @@
-import path from 'path';
+import _ from 'lodash';
 import * as vscode from 'vscode';
 import execute from './actions';
 import { getActions } from './actors';
+import supportedDB from './supportedDB.json';
 
 export function activate(context: vscode.ExtensionContext) {
   const supportedORM = ['TypeORM', 'Sequelize'];
@@ -36,18 +37,37 @@ export function activate(context: vscode.ExtensionContext) {
     if (!dirs) {
       return;
     }
-    const { path: chosenDir } = dirs[0];
+    const { path: targetDbDir } = dirs[0];
 
-    const entitiesDir = await vscode.window.showInputBox({
+    const entitiesDirName = await vscode.window.showInputBox({
       placeHolder:
         'Enter the name of your entities folder. Leave it empty to use the chosen directory as the target directory.',
       prompt: 'Please enter the entities folder name (or leave it empty)',
       value: '',
     });
+    if (!entitiesDirName) {
+      vscode.window.showErrorMessage('Please enter a valid entities folder name');
+      return;
+    }
 
-    const targetDir = path.resolve(chosenDir, entitiesDir || '');
+    const dbOptions = supportedDB.data.map(db => ({
+      label: db.name,
+      description: db.package,
+      detail: `npm install ${db.package} --save`,
+      link: db.source,
+    }));
+    const chosenDb= await vscode.window.showQuickPick(dbOptions, { matchOnDetail: true });
+    if (!chosenDb) {
+      vscode.window.showErrorMessage('Please select a valid DB');
+      return;
+    }
 
-    const actions = await getActions(format, targetDir, dbmlPath);
+    const dbInfo = _.find(supportedDB.data, { name: chosenDb.label });
+    if (!dbInfo) {
+      return;
+    }
+
+    const actions = await getActions(format, targetDbDir, entitiesDirName, dbInfo, dbmlPath);
     execute(actions);
 
     vscode.window.showInformationMessage('Schema generated successfully!');

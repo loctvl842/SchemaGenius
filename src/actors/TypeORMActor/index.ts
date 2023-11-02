@@ -1,23 +1,22 @@
-import { Parser } from '@dbml/core';
 import fs from 'fs';
 import * as inflection from 'inflection';
 import _ from 'lodash';
 import path from 'path';
-import ts from 'typescript';
-import execute from '../../actions';
 import { ActionType } from '../../types/Action';
 import {
-  TypeORMActorAuthor,
-  TypeORMActorDependency,
   TypeORMActorEntity,
   TypeORMActorField,
   TypeORMActorFieldLine,
-  TypeORMActorImportCommand,
   TypeORMColumnDecoratorType,
   TypeORMRelationDecoratorType,
 } from '../../types/TypeORMActor';
 import { IDatabase, ISchema } from '../../types/dbml';
-import { asyncExec, formatLogMsg, getRootOfDir, install, pgTypeToTsType } from '../../utils';
+import { pgTypeToTsType } from '../../utils';
+import TypeORMConfig from './Config';
+import SeedActor from '../SeedActor';
+import { Dependency, SeedActorAuthor } from '../../types/SeedActor';
+import { DatabaseInfo } from '../../types/Database';
+import TypeORMHelper from './Helper';
 
 class TypeORMActor {
   /*
@@ -27,19 +26,16 @@ class TypeORMActor {
    */
   static prefixEntity = 'Core';
 
-  static getFieldArr(
-    tableId: number,
-    model: IDatabase,
-  ): { fields: TypeORMActorField[]; dependencies: TypeORMActorDependency[] } {
+  static getFieldArr(tableId: number, model: IDatabase): { fields: TypeORMActorField[]; dependencies: Dependency[] } {
     const table = model.tables[tableId];
 
-    const dependencies: TypeORMActorDependency[] = [];
+    const dependencies: Dependency[] = [];
     const fields = table.fieldIds.map((fieldId: number) => {
       const field = model.fields[fieldId];
 
       // helper
       const getColumnDecoratorStr = (columnDecorator: TypeORMColumnDecoratorType, columnOptions: string) => {
-        const dependency: TypeORMActorDependency = {
+        const dependency: Dependency = {
           type: 'named',
           name: columnDecorator,
           source: 'typeorm',
@@ -310,97 +306,7 @@ class TypeORMActor {
     return mapperEntityArr;
   }
 
-  static async resolveDependency(packageName: string, targetDir: string): Promise<void> {
-    if (packageName === 'typeorm') {
-      await install(['typeorm', 'pg'], targetDir);
-      await install(['@types/node'], targetDir, { dev: true });
-
-      const rootOfTargetDir = await getRootOfDir(targetDir);
-      const tsconfigPath = path.join(rootOfTargetDir, 'tsconfig.json');
-      const { config: existingConfig } = ts.readConfigFile(tsconfigPath, ts.sys.readFile);
-      const actionsTsConfig: ActionType[] = [];
-      if (Object.hasOwnProperty.call(existingConfig.compilerOptions, 'emitDecoratorMetadata')) {
-        actionsTsConfig.push({
-          type: 'replace',
-          pattern: /"emitDecoratorMetadata":\s*(true|false)/g,
-          path: tsconfigPath,
-          template: '"emitDecoratorMetadata": true',
-        });
-      } else {
-        actionsTsConfig.push({
-          type: 'append',
-          pattern: '"compilerOptions": {',
-          path: tsconfigPath,
-          template: '\n    "emitDecoratorMetadata": true,',
-        });
-      }
-      if (Object.hasOwnProperty.call(existingConfig.compilerOptions, 'experimentalDecorators')) {
-        actionsTsConfig.push({
-          type: 'replace',
-          pattern: /"experimentalDecorators":\s*(true|false)/g,
-          path: tsconfigPath,
-          template: '"experimentalDecorators": true',
-        });
-      } else {
-        actionsTsConfig.push({
-          type: 'append',
-          pattern: '"compilerOptions": {',
-          path: tsconfigPath,
-          template: '\n    "experimentalDecorators": true,',
-        });
-      }
-      execute(actionsTsConfig);
-    } else {
-      await install([packageName], targetDir);
-    }
-  }
-
-  static async getDependenciesStr(dependencies: TypeORMActorDependency[], targetDir: string): Promise<string> {
-    const uniqDependencies = _.uniqWith([...dependencies], _.isEqual);
-    const uniqDependenciesBySource = Object.entries(_.groupBy(uniqDependencies, 'source'));
-    const importCommands: TypeORMActorImportCommand[] = await Promise.all(
-      uniqDependenciesBySource.map(
-        async ([source, groupedDeps]: [string, TypeORMActorDependency[]]): Promise<TypeORMActorImportCommand> => {
-          const { level, typeSource } = groupedDeps[0];
-          if (typeSource === 'external') {
-            await TypeORMActor.resolveDependency(source, targetDir);
-          }
-          const depsByType = _.groupBy(groupedDeps, 'type');
-          const namedDeps = depsByType.named || [];
-          const defaultDeps = depsByType.default || [];
-
-          const depsStr = [...defaultDeps.map(dep => dep.name)];
-          if (!_.isEmpty(namedDeps)) {
-            depsStr.push(`{ ${namedDeps.map(dep => dep.name).join(', ')} }`);
-          }
-
-          return {
-            dependencyStr: `import ${depsStr.join(', ')} from '${source}'`,
-            source,
-            level,
-          };
-        },
-      ),
-    );
-
-    // import packages with small level first, then organize imports by source name
-    const sortedImportCommands = _.sortBy(importCommands, ['level', 'source']);
-    const dependenciesStr = sortedImportCommands.map(command => command.dependencyStr).join('\n');
-    return dependenciesStr;
-  }
-
-  static async getAuthorInfo(): Promise<TypeORMActorAuthor> {
-    try {
-      const { stdout: name } = await asyncExec('git config user.name');
-      const { stdout: email } = await asyncExec('git config user.email');
-      return { name: name.trim(), email: email.trim() };
-    } catch (e) {
-      console.log(formatLogMsg('warn', 'Failed to get author info'));
-      return { name: 'unknwon', email: 'unknwon' };
-    }
-  }
-
-  static getWarningMsg(entity: TypeORMActorEntity, author: TypeORMActorAuthor): string {
+  static getWarningMsg(entity: TypeORMActorEntity, author: SeedActorAuthor): string {
     const now = new Date();
     const formattedDate = now.toLocaleString('en-US', {
       year: 'numeric',
@@ -444,7 +350,7 @@ class TypeORMActor {
     const mapperFolderName = path.basename(mapperDir);
     const sourceFolderName = `__${mapperFolderName}__`;
     const sourceDir = path.resolve(path.dirname(mapperDir), sourceFolderName);
-    const author = await TypeORMActor.getAuthorInfo();
+    const author = await SeedActor.getAuthorInfo();
 
     const { tableIds, refIds } = schema;
 
@@ -473,7 +379,7 @@ class TypeORMActor {
           .join('\n\n')}`;
         const classDefinitionStr: string = `abstract class ${TypeORMActor.prefixEntity}${entityName} {\n${classContentStr}\n}\n\nexport default ${TypeORMActor.prefixEntity}${entityName};`;
 
-        const dependenciesStr: string = await TypeORMActor.getDependenciesStr(dependencies, targetDir);
+        const dependenciesStr: string = await TypeORMHelper.getDependenciesStr(dependencies, targetDir);
         const warningMsg: string = TypeORMActor.getWarningMsg(entity, author);
 
         const entityStr: string = `${warningMsg}${dependenciesStr}\n\n${classDefinitionStr}`;
@@ -522,7 +428,7 @@ class TypeORMActor {
           typeSource: 'internal',
         });
 
-        const dependenciesStr: string = await TypeORMActor.getDependenciesStr(dependencies, targetDir);
+        const dependenciesStr: string = await TypeORMHelper.getDependenciesStr(dependencies, targetDir);
         const entityStr: string = `${dependenciesStr}\n\n${entityDecoratorStr}\n${classDefinitionStr}`;
 
         return {
@@ -538,15 +444,13 @@ class TypeORMActor {
     return actions;
   }
 
-  static extractModel(schemaPath: string): IDatabase {
-    const dbml = fs.readFileSync(schemaPath, 'utf-8');
-    const database = Parser.parse(dbml, 'dbml');
-    const model = database.normalize();
-    return model;
-  }
-
-  static async getActions(targetDirPath: string, dbmlPath: string): Promise<ActionType[]> {
-    const model = this.extractModel(dbmlPath);
+  static async getActions(
+    targetDbDir: string,
+    entitiesDirName: string,
+    dbInfo: DatabaseInfo,
+    model: IDatabase,
+  ): Promise<ActionType[]> {
+    const targetDirPath = path.resolve(targetDbDir, entitiesDirName);
     const database = model.database[1];
     const actions: ActionType[] = await database.schemaIds.reduce(
       async (promisePrevActions: Promise<ActionType[]>, schemaId: number) => {
@@ -557,6 +461,8 @@ class TypeORMActor {
       },
       Promise.resolve([]),
     );
+
+    actions.push(await TypeORMConfig.getAction(targetDbDir, entitiesDirName, dbInfo));
 
     return actions;
   }
