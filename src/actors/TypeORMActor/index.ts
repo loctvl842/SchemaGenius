@@ -4,8 +4,8 @@ import * as inflection from 'inflection';
 import _ from 'lodash';
 import path from 'path';
 import ts from 'typescript';
-import execute from '../actions';
-import { ActionType } from '../types/Action';
+import execute from '../../actions';
+import { ActionType } from '../../types/Action';
 import {
   TypeORMActorAuthor,
   TypeORMActorDependency,
@@ -15,9 +15,9 @@ import {
   TypeORMActorImportCommand,
   TypeORMColumnDecoratorType,
   TypeORMRelationDecoratorType,
-} from '../types/TypeORMActor';
-import { IDatabase, ISchema } from '../types/dbml';
-import { asyncExec, formatLogMsg, getRootOfDir, install, pgTypeToTsType } from '../utils';
+} from '../../types/TypeORMActor';
+import { IDatabase, ISchema } from '../../types/dbml';
+import { asyncExec, formatLogMsg, getRootOfDir, install, pgTypeToTsType } from '../../utils';
 
 class TypeORMActor {
   /*
