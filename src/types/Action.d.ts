@@ -3,6 +3,7 @@ export type ActionType =
 	| ActionConfig
 	| AddActionConfig
 	| AppendActionConfig
+  | ReplaceActionConfig
 
 export interface ActionConfig {
 	type: string;
@@ -29,4 +30,11 @@ export interface AppendActionConfig extends ActionConfig {
 	path: string;
 	pattern: string | RegExp;
 	template: string;
+}
+
+export interface ReplaceActionConfig extends ActionConfig {
+  type: 'replace';
+  path: string;
+  pattern: string | RegExp;
+  template: string;
 }

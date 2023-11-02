@@ -1,13 +1,15 @@
-import { ActionConfig, ActionType, AddActionConfig, AppendActionConfig } from '../types/Action';
+import { ActionConfig, ActionType, AddActionConfig, AppendActionConfig, ReplaceActionConfig } from '../types/Action';
 import { formatLogMsg } from '../utils';
 import add from './add';
 import append from './append';
+import replace from './replace'
 
 type ActionTypeHandler = (config: ActionConfig) => void;
 
 const ActionHandler: Record<string, ActionTypeHandler> = {
   add: (config: ActionConfig) => add(config as AddActionConfig),
   append: (config: ActionConfig) => append(config as AppendActionConfig),
+  replace: (config: ActionConfig) => replace(config as ReplaceActionConfig),
 };
 
 export default function execute(actions: ActionType[]) {

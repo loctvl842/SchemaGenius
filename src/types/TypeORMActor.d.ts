@@ -7,6 +7,7 @@ export interface TypeORMActorDependency {
   name: string;
   source: string;
   level: number;
+  typeSource: 'internal' | 'external';
 }
 
 export interface EntityConfig {

@@ -1,4 +1,9 @@
 import chalk from 'chalk';
+import { exec } from 'child_process';
+import fs from 'fs';
+import _ from 'lodash';
+import path from 'path';
+import { promisify } from 'util';
 
 export function pgTypeToTsType(columnType: string) {
   switch (columnType) {
@@ -86,4 +91,81 @@ export function formatLogMsg(status: 'info' | 'error' | 'warn' | 'ok', message: 
   const formatStatus = `${formatStatusBg(` ${status.toUpperCase()} `)}`;
   const formatTitle = title ? `${chalk.bold.white(title)}:\n` : '';
   return `${formatStatus} ${formatTitle}${message}`;
+}
+
+export async function getRootOfDir(targetDir: string): Promise<string> {
+  const { packageDirectory } = await import('pkg-dir');
+  const rootPath = (await packageDirectory({ cwd: targetDir })) || '';
+  return rootPath;
+}
+
+export async function asyncExec(command: string): Promise<ExecResult> {
+  console.info(formatLogMsg('info', `Executing ${chalk.green(command)}`));
+  const res = await promisify(exec)(command);
+  return res;
+}
+
+export async function detectPackageManager(targetDir: string): Promise<'npm' | 'yarn'> {
+  const rootOfTargetDir = await getRootOfDir(targetDir);
+  if (fs.existsSync(path.join(rootOfTargetDir, 'package-lock.json'))) {
+    return 'npm';
+  }
+  if (fs.existsSync(path.join(rootOfTargetDir, 'yarn.lock'))) {
+    return 'yarn';
+  }
+  await asyncExec(`yarn install --dev --cwd ${rootOfTargetDir}`);
+  return 'yarn';
+}
+
+interface ExecResult {
+  stdout: string;
+  stderr: string;
+}
+
+export async function isInstalled(packageName: string, targetDir: string): Promise<boolean> {
+  try {
+    const rootOfTargetDir = await getRootOfDir(targetDir);
+    const packagePath = path.resolve(rootOfTargetDir, 'node_modules', packageName);
+    await fs.promises.access(packagePath, fs.constants.F_OK);
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+export async function install(packageNames: string[], targetDir: string, options?: { dev?: boolean }): Promise<void> {
+  const unInstalledPackages = (
+    await Promise.all(
+      packageNames.map(async name => {
+        if (!(await isInstalled(name, targetDir))) {
+          return name;
+        }
+        return null;
+      }),
+    )
+  ).filter(item => item !== null);
+  if (_.isEmpty(unInstalledPackages)) {
+    return;
+  }
+  try {
+    const packageManager = await detectPackageManager(targetDir);
+    const rootOfTargetDir = await getRootOfDir(targetDir);
+    if (packageManager === 'yarn') {
+      let command = `yarn add ${unInstalledPackages.join(' ')} --cwd ${rootOfTargetDir}`;
+      if (options && options.dev) {
+        command += ' --dev';
+      }
+      console.log(formatLogMsg('info', `Installing ${unInstalledPackages.join('\n')}`));
+      await asyncExec(command);
+    } else {
+      let command = `npm install ${unInstalledPackages.join(' ')} --prefix ${rootOfTargetDir}`;
+      if (options && options.dev) {
+        command += ' --save-dev';
+      }
+      await asyncExec(command);
+    }
+    console.log(formatLogMsg('ok', `Installed ${unInstalledPackages.join('\n')}`));
+  } catch (e) {
+    console.log(formatLogMsg('error', `Failed to install ${unInstalledPackages.join('\n')}`));
+  }
 }

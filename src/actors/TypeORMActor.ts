@@ -1,10 +1,10 @@
 import { Parser } from '@dbml/core';
-import { exec } from 'child_process';
 import fs from 'fs';
 import * as inflection from 'inflection';
 import _ from 'lodash';
 import path from 'path';
-import { promisify } from 'util';
+import ts from 'typescript';
+import execute from '../actions';
 import { ActionType } from '../types/Action';
 import {
   TypeORMActorAuthor,
@@ -17,9 +17,16 @@ import {
   TypeORMRelationDecoratorType,
 } from '../types/TypeORMActor';
 import { IDatabase, ISchema } from '../types/dbml';
-import { formatLogMsg, pgTypeToTsType } from '../utils';
+import { asyncExec, formatLogMsg, getRootOfDir, install, pgTypeToTsType } from '../utils';
 
 class TypeORMActor {
+  /*
+   * Defines the prefix used for entity names.
+   * For example, 'Ab' is the marker indicating an abstract class;
+   * therefore, 'AbMovie' signifies an abstract entity representing movies.
+   */
+  static prefixEntity = 'Core';
+
   static getFieldArr(
     tableId: number,
     model: IDatabase,
@@ -37,6 +44,7 @@ class TypeORMActor {
           name: columnDecorator,
           source: 'typeorm',
           level: 0,
+          typeSource: 'external',
         };
 
         if (!_.some(dependencies, item => _.isEqual(item, dependency))) {
@@ -212,18 +220,21 @@ class TypeORMActor {
           name: foreignRelationshipType,
           source: 'typeorm',
           level: 0,
+          typeSource: 'external',
         },
         {
           type: 'named',
           name: 'Relation',
           source: 'typeorm',
           level: 0,
+          typeSource: 'external',
         },
         {
           type: 'default',
           name: `type ${refEntity.entityName}`,
           source: `./${refEntity.entityName}`,
           level: 1,
+          typeSource: 'internal',
         },
       );
       refEntity.dependencies.push(
@@ -232,18 +243,21 @@ class TypeORMActor {
           name: refRelationshipType,
           source: 'typeorm',
           level: 0,
+          typeSource: 'external',
         },
         {
           type: 'named',
           name: 'Relation',
           source: 'typeorm',
           level: 0,
+          typeSource: 'external',
         },
         {
           type: 'default',
           name: `type ${foreignEntity.entityName}`,
           source: `./${foreignEntity.entityName}`,
           level: 1,
+          typeSource: 'internal',
         },
       );
 
@@ -272,6 +286,7 @@ class TypeORMActor {
         name: 'JoinColumn',
         source: 'typeorm',
         level: 0,
+        typeSource: 'external',
       });
 
       const foreignRelationshipField: TypeORMActorField = [];
@@ -295,26 +310,77 @@ class TypeORMActor {
     return mapperEntityArr;
   }
 
-  static async getDependenciesStr(dependencies: TypeORMActorDependency[]): Promise<string> {
+  static async resolveDependency(packageName: string, targetDir: string): Promise<void> {
+    if (packageName === 'typeorm') {
+      await install(['typeorm', 'pg'], targetDir);
+      await install(['@types/node'], targetDir, { dev: true });
+
+      const rootOfTargetDir = await getRootOfDir(targetDir);
+      const tsconfigPath = path.join(rootOfTargetDir, 'tsconfig.json');
+      const { config: existingConfig } = ts.readConfigFile(tsconfigPath, ts.sys.readFile);
+      const actionsTsConfig: ActionType[] = [];
+      if (Object.hasOwnProperty.call(existingConfig.compilerOptions, 'emitDecoratorMetadata')) {
+        actionsTsConfig.push({
+          type: 'replace',
+          pattern: /"emitDecoratorMetadata":\s*(true|false)/g,
+          path: tsconfigPath,
+          template: '"emitDecoratorMetadata": true',
+        });
+      } else {
+        actionsTsConfig.push({
+          type: 'append',
+          pattern: '"compilerOptions": {',
+          path: tsconfigPath,
+          template: '\n    "emitDecoratorMetadata": true,',
+        });
+      }
+      if (Object.hasOwnProperty.call(existingConfig.compilerOptions, 'experimentalDecorators')) {
+        actionsTsConfig.push({
+          type: 'replace',
+          pattern: /"experimentalDecorators":\s*(true|false)/g,
+          path: tsconfigPath,
+          template: '"experimentalDecorators": true',
+        });
+      } else {
+        actionsTsConfig.push({
+          type: 'append',
+          pattern: '"compilerOptions": {',
+          path: tsconfigPath,
+          template: '\n    "experimentalDecorators": true,',
+        });
+      }
+      execute(actionsTsConfig);
+    } else {
+      await install([packageName], targetDir);
+    }
+  }
+
+  static async getDependenciesStr(dependencies: TypeORMActorDependency[], targetDir: string): Promise<string> {
     const uniqDependencies = _.uniqWith([...dependencies], _.isEqual);
-    const importCommands: TypeORMActorImportCommand[] = Object.entries(_.groupBy(uniqDependencies, 'source')).map(
-      ([source, groupedDeps]: [string, TypeORMActorDependency[]]): TypeORMActorImportCommand => {
-        const { level } = groupedDeps[0];
-        const depsByType = _.groupBy(groupedDeps, 'type');
-        const namedDeps = depsByType.named || [];
-        const defaultDeps = depsByType.default || [];
+    const uniqDependenciesBySource = Object.entries(_.groupBy(uniqDependencies, 'source'));
+    const importCommands: TypeORMActorImportCommand[] = await Promise.all(
+      uniqDependenciesBySource.map(
+        async ([source, groupedDeps]: [string, TypeORMActorDependency[]]): Promise<TypeORMActorImportCommand> => {
+          const { level, typeSource } = groupedDeps[0];
+          if (typeSource === 'external') {
+            await TypeORMActor.resolveDependency(source, targetDir);
+          }
+          const depsByType = _.groupBy(groupedDeps, 'type');
+          const namedDeps = depsByType.named || [];
+          const defaultDeps = depsByType.default || [];
 
-        const depsStr = [...defaultDeps.map(dep => dep.name)];
-        if (!_.isEmpty(namedDeps)) {
-          depsStr.push(`{ ${namedDeps.map(dep => dep.name).join(', ')} }`);
-        }
+          const depsStr = [...defaultDeps.map(dep => dep.name)];
+          if (!_.isEmpty(namedDeps)) {
+            depsStr.push(`{ ${namedDeps.map(dep => dep.name).join(', ')} }`);
+          }
 
-        return {
-          dependencyStr: `import ${depsStr.join(', ')} from '${source}'`,
-          source,
-          level,
-        };
-      },
+          return {
+            dependencyStr: `import ${depsStr.join(', ')} from '${source}'`,
+            source,
+            level,
+          };
+        },
+      ),
     );
 
     // import packages with small level first, then organize imports by source name
@@ -324,7 +390,6 @@ class TypeORMActor {
   }
 
   static async getAuthorInfo(): Promise<TypeORMActorAuthor> {
-    const asyncExec = promisify(exec);
     try {
       const { stdout: name } = await asyncExec('git config user.name');
       const { stdout: email } = await asyncExec('git config user.email');
@@ -349,7 +414,7 @@ class TypeORMActor {
     return `/**
  * AUTO-GENERATED CODE - DO NOT MODIFY
  *
- * This file, 'I${entity.entityName}.ts', is generated automatically from the source database schema (DBML).
+ * This file, '${TypeORMActor.prefixEntity}${entity.entityName}.ts', is generated automatically from the source database schema (DBML).
  * It defines the database table structure and is meant to be kept consistent with the database schema.
  * Any changes to the table structure should be made in the original DBML source and then regenerated.
  *
@@ -406,14 +471,14 @@ class TypeORMActor {
         const classContentStr: string = `${classContent
           .map((field: TypeORMActorField) => `  ${field.join('\n  ')}`)
           .join('\n\n')}`;
-        const classDefinitionStr: string = `abstract class I${entityName} {\n${classContentStr}\n}\n\nexport default I${entityName};`;
+        const classDefinitionStr: string = `abstract class ${TypeORMActor.prefixEntity}${entityName} {\n${classContentStr}\n}\n\nexport default ${TypeORMActor.prefixEntity}${entityName};`;
 
-        const dependenciesStr: string = await TypeORMActor.getDependenciesStr(dependencies);
+        const dependenciesStr: string = await TypeORMActor.getDependenciesStr(dependencies, targetDir);
         const warningMsg: string = TypeORMActor.getWarningMsg(entity, author);
 
         const entityStr: string = `${warningMsg}${dependenciesStr}\n\n${classDefinitionStr}`;
 
-        const filePath: string = `${sourceDir}/I${entityName}.ts`;
+        const filePath: string = `${sourceDir}/${TypeORMActor.prefixEntity}${entityName}.ts`;
 
         // No need to check warningMsg
         const entityContentStr = entityStr.substring(warningMsg.length);
@@ -442,20 +507,22 @@ class TypeORMActor {
           name: 'Entity',
           source: 'typeorm',
           level: 0,
+          typeSource: 'external',
         });
         const classContentStr: string = `${classContent
           .map((field: TypeORMActorField) => `  ${field.join('\n  ')}`)
           .join('\n\n')}`;
-        const sourceClassName: string = `I${entityName}`;
+        const sourceClassName: string = `${TypeORMActor.prefixEntity}${entityName}`;
         const classDefinitionStr: string = `class ${entityName} extends ${sourceClassName} {\n${classContentStr}\n}\n\nexport default ${entityName};`;
         dependencies.push({
           type: 'default',
           name: sourceClassName,
-          source: `../${sourceFolderName}/I${entityName}`,
+          source: `../${sourceFolderName}/${TypeORMActor.prefixEntity}${entityName}`,
           level: 1,
+          typeSource: 'internal',
         });
 
-        const dependenciesStr: string = await TypeORMActor.getDependenciesStr(dependencies);
+        const dependenciesStr: string = await TypeORMActor.getDependenciesStr(dependencies, targetDir);
         const entityStr: string = `${dependenciesStr}\n\n${entityDecoratorStr}\n${classDefinitionStr}`;
 
         return {
@@ -476,49 +543,6 @@ class TypeORMActor {
     const database = Parser.parse(dbml, 'dbml');
     const model = database.normalize();
     return model;
-  }
-
-  static getDataSourceConfig() {
-    const dependencies: TypeORMActorDependency[] = [];
-    const configStr = `import { DatabaseConfig } from '@src/interfaces/app/configuration';
-import dotenv from 'dotenv';
-import { resolve } from 'path';
-import 'reflect-metadata';
-import { DataSource } from 'typeorm';
-
-dotenv.config();
-
-const { env } = process;
-
-const dbConfig: DatabaseConfig = {
-  dbHost: env.POSTGRES_HOST || 'localhost',
-  dbPort: env.POSTGRES_PORT || 5432,
-  dbName: env.POSTGRES_DB || 'postgres',
-  dbUser: env.POSTGRES_USER || 'postgres',
-  dbPass: env.POSTGRES_PASSWORD || 'postgres',
-};
-
-const entityPath = resolve(__dirname, 'entities');
-const migrationsPath = resolve(__dirname, 'migrations');
-
-export const AppDataSource = new DataSource({
-  type: 'postgres',
-  host: dbConfig.dbHost,
-  port: dbConfig.dbPort,
-  username: dbConfig.dbUser,
-  password: dbConfig.dbPass,
-  database: dbConfig.dbName,
-  entities: [\`\${entityPath}/**/*{.ts,.js}\`],
-  migrations: [\`\${migrationsPath}/**/*.ts\`],
-  migrationsTableName: 'history'
-});`;
-    dependencies.push({
-      type: 'default',
-      name: 'dotenv',
-      source: 'dotenv',
-      level: 0,
-    });
-    return { configStr, dependencies };
   }
 
   static async getActions(targetDirPath: string, dbmlPath: string): Promise<ActionType[]> {
