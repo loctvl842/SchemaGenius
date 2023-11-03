@@ -1,6 +1,5 @@
 ## Generating Code from DBML
 
-When running the command above to generate models, two folders will be generated. For instance, if your target directory is `entities`, you will find two directories created: `entities` and `__entities__`. It's essential to understand how to work with these directories to maintain consistency in your generated code.
 
 #### The `entities` Directory
 

@@ -19,6 +19,17 @@ import { DatabaseInfo } from '../../types/Database';
 import TypeORMHelper from './Helper';
 
 class TypeORMActor {
+  private static _requiredPackages: Set<string> = new Set();
+
+  static addRequiredPackage(pkg: string) {
+    TypeORMActor._requiredPackages.add(pkg);
+  }
+
+  static get requiredPackages() {
+    const requiredPackages = new Set(TypeORMActor._requiredPackages);
+    return Array.from(requiredPackages);
+  }
+
   /*
    * Defines the prefix used for entity names.
    * For example, 'Ab' is the marker indicating an abstract class;
@@ -379,7 +390,11 @@ class TypeORMActor {
           .join('\n\n')}`;
         const classDefinitionStr: string = `abstract class ${TypeORMActor.prefixEntity}${entityName} {\n${classContentStr}\n}\n\nexport default ${TypeORMActor.prefixEntity}${entityName};`;
 
-        const dependenciesStr: string = await TypeORMHelper.getDependenciesStr(dependencies, targetDir);
+        const dependenciesStr: string = await TypeORMHelper.getDependenciesStr(
+          dependencies,
+          targetDir,
+          TypeORMActor.addRequiredPackage,
+        );
         const warningMsg: string = TypeORMActor.getWarningMsg(entity, author);
 
         const entityStr: string = `${warningMsg}${dependenciesStr}\n\n${classDefinitionStr}`;
@@ -396,6 +411,7 @@ class TypeORMActor {
           type: 'add',
           path: filePath,
           template: entityStr,
+          description: filePath,
           force: true,
         };
       }),
@@ -428,13 +444,24 @@ class TypeORMActor {
           typeSource: 'internal',
         });
 
-        const dependenciesStr: string = await TypeORMHelper.getDependenciesStr(dependencies, targetDir);
+        dependencies.forEach(dep => {
+          if (dep.typeSource === 'external') {
+            TypeORMActor.addRequiredPackage(dep.source);
+          }
+        });
+
+        const dependenciesStr: string = await TypeORMHelper.getDependenciesStr(
+          dependencies,
+          targetDir,
+          TypeORMActor.addRequiredPackage,
+        );
         const entityStr: string = `${dependenciesStr}\n\n${entityDecoratorStr}\n${classDefinitionStr}`;
 
         return {
           type: 'add',
           path: `${mapperDir}/${entityName}.ts`,
           template: entityStr,
+          description: `${mapperDir}/${entityName}.ts`,
           skipIfExists: true,
         };
       }),
@@ -462,7 +489,7 @@ class TypeORMActor {
       Promise.resolve([]),
     );
 
-    actions.push(await TypeORMConfig.getAction(targetDbDir, entitiesDirName, dbInfo));
+    actions.push(await TypeORMConfig.getAction(targetDbDir, entitiesDirName, dbInfo, TypeORMActor.addRequiredPackage));
 
     return actions;
   }

@@ -7,6 +7,7 @@ export type ActionType =
 
 export interface ActionConfig {
 	type: string;
+  description: string;
 	force?: boolean;
 	data?: object;
 	skip?: () => boolean;
@@ -37,4 +38,9 @@ export interface ReplaceActionConfig extends ActionConfig {
   path: string;
   pattern: string | RegExp;
   template: string;
+}
+
+export interface ActionResponse {
+  success: boolean;
+  error?: Error;
 }

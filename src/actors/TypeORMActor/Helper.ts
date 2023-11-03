@@ -1,18 +1,22 @@
 import _ from 'lodash';
 import { Dependency } from '../../types/SeedActor';
 import { TypeORMActorImportCommand } from '../../types/TypeORMActor';
-import SeedActor from '../SeedActor';
 
 class TypeORMHelper {
-  static async getDependenciesStr(dependencies: Dependency[], targetDir: string): Promise<string> {
+  static async getDependenciesStr(
+    dependencies: Dependency[],
+    targetDir: string,
+    addRequiredPackage: (pkg: string) => void,
+  ): Promise<string> {
     const uniqDependencies = _.uniqWith([...dependencies], _.isEqual);
     const uniqDependenciesBySource = Object.entries(_.groupBy(uniqDependencies, 'source'));
     const importCommands: TypeORMActorImportCommand[] = await Promise.all(
       uniqDependenciesBySource.map(
         async ([source, groupedDeps]: [string, Dependency[]]): Promise<TypeORMActorImportCommand> => {
           const { level, typeSource } = groupedDeps[0];
+
           if (typeSource === 'external') {
-            await SeedActor.resolveDependency(source, targetDir);
+            addRequiredPackage(source);
           }
           const depsByType = _.groupBy(groupedDeps, 'type');
           const namedDeps = depsByType.named || [];

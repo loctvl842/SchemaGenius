@@ -1,10 +1,9 @@
 import fs from 'fs';
 import _ from 'lodash';
-import { ReplaceActionConfig } from '../types/Action';
-import { formatLogMsg, logAction } from '../utils';
+import { ActionResponse, ReplaceActionConfig } from '../types/Action';
 
-export default async function replace(actionConfig: ReplaceActionConfig): Promise<void> {
-  const { type, path: filePath, pattern, template } = actionConfig;
+export default async function replace(actionConfig: ReplaceActionConfig): Promise<ActionResponse> {
+  const { path: filePath, pattern, template } = actionConfig;
   try {
     fs.readFile(filePath, 'utf8', (err, data) => {
       if (err) {
@@ -18,10 +17,13 @@ export default async function replace(actionConfig: ReplaceActionConfig): Promis
         if (errWriteFile) {
           throw new Error(`Error writing file: ${errWriteFile.message}`);
         }
-        console.info(formatLogMsg('ok', logAction(type, filePath)));
       });
     });
-  } catch (e) {
-    console.error(formatLogMsg('error', `Error replacing text to file ${filePath}:\n ${e}`));
+    return { success: true };
+  } catch (error) {
+    if (error instanceof Error) {
+      return { success: false, error };
+    }
+    throw error;
   }
 }

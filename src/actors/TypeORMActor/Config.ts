@@ -1,7 +1,6 @@
 import { ActionType } from '../../types/Action';
 import { DatabaseInfo } from '../../types/Database';
 import { Dependency, FileSegment } from '../../types/SeedActor';
-import SeedActor from '../SeedActor';
 import TypeORMHelper from './Helper';
 
 class TypeORMConfig {
@@ -64,13 +63,19 @@ export const AppDataSource = new DataSource({
     return { content, dependencies };
   }
 
-  static async getAction(targetDbDir: string, entitiesDirName: string, dbInfo: DatabaseInfo): Promise<ActionType> {
+  static async getAction(
+    targetDbDir: string,
+    entitiesDirName: string,
+    dbInfo: DatabaseInfo,
+    addRequiredPackage: (pkg: string) => void,
+  ): Promise<ActionType> {
     const { content, dependencies } = TypeORMConfig.getInitDataSource(entitiesDirName, dbInfo);
-    const dependenciesStr = await TypeORMHelper.getDependenciesStr(dependencies, targetDbDir);
-    await SeedActor.resolveDependency(dbInfo.package, targetDbDir);
+    const dependenciesStr = await TypeORMHelper.getDependenciesStr(dependencies, targetDbDir, addRequiredPackage);
+    addRequiredPackage(dbInfo.package);
     const template: string = `${dependenciesStr}\n\n${content}`;
     return {
       type: 'add',
+      description: `${targetDbDir}/index.ts`,
       path: `${targetDbDir}/index.ts`,
       template,
       skipIfExists: true,

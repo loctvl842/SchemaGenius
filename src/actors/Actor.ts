@@ -4,6 +4,7 @@ import { ActionType } from '../types/Action';
 import { DatabaseInfo } from '../types/Database';
 import { IDatabase } from '../types/dbml';
 import TypeORMActor from './TypeORMActor';
+import SeedActor from './SeedActor';
 
 class Actor {
   static extractModel(schemaPath: string): IDatabase {
@@ -23,13 +24,22 @@ class Actor {
     const model = Actor.extractModel(dbmlPath);
 
     let actions: ActionType[] = [];
+    let requiredPackages: string[] = [];
     switch (format) {
       case 'TypeORM':
         actions = [...(await TypeORMActor.getActions(targetDbDir, entitiesDirName, dbInfo, model))];
+        requiredPackages = TypeORMActor.requiredPackages;
         break;
       default:
         break;
     }
+
+    // resolve all dependencies
+    await Promise.all(
+      requiredPackages.map(async (pkg: string) => {
+        await SeedActor.resolveDependency(pkg, targetDbDir);
+      }),
+    );
     return actions;
   }
 }

@@ -56,7 +56,7 @@ export function activate(context: vscode.ExtensionContext) {
       detail: `npm install ${db.package} --save`,
       link: db.source,
     }));
-    const chosenDb= await vscode.window.showQuickPick(dbOptions, { matchOnDetail: true });
+    const chosenDb = await vscode.window.showQuickPick(dbOptions, { matchOnDetail: true });
     if (!chosenDb) {
       vscode.window.showErrorMessage('Please select a valid DB');
       return;
@@ -68,7 +68,7 @@ export function activate(context: vscode.ExtensionContext) {
     }
 
     const actions = await getActions(format, targetDbDir, entitiesDirName, dbInfo, dbmlPath);
-    execute(actions);
+    await execute(actions);
 
     vscode.window.showInformationMessage('Schema generated successfully!');
   });

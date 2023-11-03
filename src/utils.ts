@@ -125,6 +125,7 @@ interface ExecResult {
 export async function isInstalled(packageName: string, targetDir: string): Promise<boolean> {
   try {
     const rootOfTargetDir = await getRootOfDir(targetDir);
+
     const packagePath = path.resolve(rootOfTargetDir, 'node_modules', packageName);
     await fs.promises.access(packagePath, fs.constants.F_OK);
 
