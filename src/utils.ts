@@ -93,9 +93,22 @@ export function formatLogMsg(status: 'info' | 'error' | 'warn' | 'ok', message: 
   return `${formatStatus} ${formatTitle}${message}`;
 }
 
+function getRoot(currentDir: string, rootFiles: string[]): string | undefined {
+  if (currentDir === path.parse(currentDir).root) {
+    return undefined;
+  }
+  const foundRootFile = _.find(rootFiles, rootFile => fs.existsSync(path.join(currentDir, rootFile)));
+  if (foundRootFile) {
+    return currentDir;
+  }
+  return getRoot(path.resolve(currentDir, '..'), rootFiles);
+}
+
 export async function getRootOfDir(targetDir: string): Promise<string> {
-  const { packageDirectory } = await import('pkg-dir');
-  const rootPath = (await packageDirectory({ cwd: targetDir })) || '';
+  const rootPath = getRoot(targetDir, ['package.json', 'yarn.lock', 'package-lock.json']);
+  if (rootPath === undefined) {
+    throw new Error(`Can't find root of ${targetDir}`);
+  }
   return rootPath;
 }
 
